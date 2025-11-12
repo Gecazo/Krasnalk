@@ -3,7 +3,6 @@
 **An Open-Source ML-Driven Tool for Pedestrian-Friendly Neighborhood Assessment**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ## 📋 Overview
 
@@ -47,7 +46,7 @@ Built as a **portfolio ML project** to showcase:
            │
 ┌──────────▼──────────┐
 │  Streamlit App      │
-│  (unified_app.py)           │──► Interactive visualization
+│  (unified_app.py)   │──► Interactive visualization
 └─────────────────────┘
 ```
 
@@ -249,43 +248,8 @@ pytest tests/test_utils.py -v
 
 ---
 
-## 📈 Performance Benchmarks
 
-| Metric | Target | Achieved |
-|--------|--------|----------|
-| Data pipeline runtime | < 5 min | ~3-4 min |
-| ML training time | < 2 min | ~45 sec |
-| Streamlit load time | < 10 sec | ~5 sec |
-| Model R² | > 0.70 | ~0.85 |
 
----
-
-## 🤝 Contributing
-
-This is a portfolio project, but suggestions are welcome!
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/YourFeature`)
-3. Commit changes (`git commit -m 'Add feature'`)
-4. Push to branch (`git push origin feature/YourFeature`)
-5. Open a Pull Request
-
----
-
-## 📜 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- **OpenStreetMap contributors** for open geospatial data
-- **MPK Wrocław** for public transit data
-- **OSMnx** by Geoff Boeing for excellent OSM tooling
-- **Streamlit** for rapid prototyping framework
-
----
 
 ## 🐛 Known Limitations
 
@@ -294,33 +258,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 3. **Network Simplification**: Pedestrian routing simplified for MVP
 4. **GTFS Optional**: Synthetic transit stops if GTFS unavailable
 
----
 
-## 🔮 Future Enhancements
-
-- [ ] Real walkability survey data for training
-- [ ] Historical score tracking
-- [ ] Accessibility scoring (wheelchair-friendly routes)
-- [ ] Safety metrics (lighting, crime data)
-- [ ] Mobile-responsive design
-- [ ] Export to PDF reports
-
----
-
-## 📧 Contact
-
-**Project by**: ML Portfolio Developer  
-**Repository**: [github.com/Gecazo/Krasnalk](https://github.com/Gecazo/Krasnalk)
-
----
-
-## 🌟 Ethical AI Statement
-
-This project is designed with ethical considerations:
-- **No Bias**: Scoring algorithm treats all neighborhoods equally
-- **Transparency**: Open-source code and interpretable model
-- **Data Privacy**: No personal data collected
-- **Accessibility**: Free and open for community use
 
 ---
 
