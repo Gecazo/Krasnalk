@@ -80,9 +80,21 @@ def save_draft(neighborhoods):
 
 @st.cache_data
 def load_data():
-    """Load features from file."""
+    """Load features and ML scores from file."""
     try:
         features_df = pd.read_csv(FEATURE_FILE)
+        
+        # Try to load ML scores if available
+        scores_path = Path(FEATURE_FILE).parent / 'neighborhood_scores.csv'
+        if scores_path.exists():
+            scores_df = pd.read_csv(scores_path)
+            # Merge scores with features
+            features_df = features_df.merge(
+                scores_df[['neighborhood', 'walkability_score', 'score_category']],
+                on='neighborhood',
+                how='left'
+            )
+        
         return features_df
     except FileNotFoundError:
         return None
@@ -100,12 +112,12 @@ st.markdown('<div class="sub-header">Draw custom neighborhoods and analyze walka
 # Mode selector
 col1, col2, col3 = st.columns([1, 1, 1])
 with col1:
-    if st.button("🗺️ Draw Neighborhoods", use_container_width=True, 
+    if st.button("🗺️ Draw Neighborhoods", width='stretch', 
                  type="primary" if st.session_state.view_mode == 'draw' else "secondary"):
         st.session_state.view_mode = 'draw'
         st.rerun()
 with col2:
-    if st.button("📊 View Results", use_container_width=True,
+    if st.button("📊 View Results", width='stretch',
                  type="primary" if st.session_state.view_mode == 'analyze' else "secondary"):
         st.session_state.view_mode = 'analyze'
         st.rerun()
@@ -206,7 +218,7 @@ if st.session_state.view_mode == 'draw':
         if st.button("✅ Analyze All", 
                      disabled=len(st.session_state.neighborhoods)==0, 
                      type="primary",
-                     use_container_width=True):
+                     width='stretch'):
             try:
                 # Save neighborhoods
                 gdf = gpd.GeoDataFrame(st.session_state.neighborhoods, crs='EPSG:4326')
@@ -229,8 +241,26 @@ if st.session_state.view_mode == 'draw':
                     )
                     
                     if result.returncode == 0:
-                        st.success("✅ Analysis complete!")
-                        st.balloons()
+                        st.success("✅ Data gathering complete!")
+                        
+                        # Run ML scoring
+                        with st.spinner("Calculating ML walkability scores..."):
+                            ml_result = subprocess.run(
+                                [sys.executable, 'ml_score.py'],
+                                capture_output=True,
+                                text=True,
+                                encoding='utf-8',
+                                errors='replace',
+                                cwd=Path.cwd()
+                            )
+                            
+                            if ml_result.returncode == 0:
+                                st.success("✅ ML scoring complete!")
+                                st.balloons()
+                            else:
+                                st.warning("⚠️ ML scoring failed, but feature data is available")
+                                st.text(ml_result.stderr[:500])
+                        
                         # Clear cache to load fresh data
                         load_data.clear()
                         # Switch to results view
@@ -241,7 +271,7 @@ if st.session_state.view_mode == 'draw':
             except Exception as e:
                 st.error(f"Error: {e}")
         
-        if st.button("🗑️ Clear All", use_container_width=True):
+        if st.button("🗑️ Clear All", width='stretch'):
             st.session_state.neighborhoods = []
             save_draft(st.session_state.neighborhoods)
             st.rerun()
@@ -259,7 +289,13 @@ else:
             st.rerun()
     else:
         # Summary metrics
-        col1, col2, col3, col4 = st.columns(4)
+        has_ml = 'walkability_score' in features_df.columns
+        
+        if has_ml:
+            col1, col2, col3, col4, col5 = st.columns(5)
+        else:
+            col1, col2, col3, col4 = st.columns(4)
+        
         with col1:
             st.metric("Neighborhoods", len(features_df))
         with col2:
@@ -269,8 +305,16 @@ else:
         with col4:
             st.metric("Avg Amenities (1km)", f"{features_df['amenity_count_1km'].mean():.0f}")
         
+        if has_ml:
+            with col5:
+                avg_score = features_df['walkability_score'].mean()
+                st.metric("🎯 Avg ML Score", f"{avg_score:.1f}/100")
+        
         # Tabs for different views
-        tab1, tab2, tab3 = st.tabs(["🗺️ Map View", "📈 Feature Analysis", "📋 Data Table"])
+        if has_ml:
+            tab1, tab2, tab3, tab4 = st.tabs(["🗺️ Map View", "🎯 ML Scores", "📈 Feature Analysis", "📋 Data Table"])
+        else:
+            tab1, tab2, tab3 = st.tabs(["🗺️ Map View", "📈 Feature Analysis", "📋 Data Table"])
         
         with tab1:
             # Create map with neighborhoods
@@ -295,8 +339,21 @@ else:
                 
                 # Add polygons
                 for idx, row in merged.iterrows():
+                    # Build popup HTML with optional ML score
+                    ml_section = ""
+                    if has_ml and 'walkability_score' in row:
+                        score = row['walkability_score']
+                        category = row.get('score_category', 'N/A')
+                        ml_section = f"""
+                            <hr style="margin: 5px 0;">
+                            <p style="margin: 5px 0; font-size: 13px;">
+                                <b>🎯 ML Walkability Score:</b><br>
+                                <span style="font-size: 18px; font-weight: bold; color: #1f77b4;">{score:.1f}/100</span> ({category})
+                            </p>
+                        """
+                    
                     popup_html = f"""
-                    <div style="font-family: Arial; width: 250px;">
+                    <div style="font-family: Arial; width: 280px;">
                         <h4 style="margin: 0;">{row['neighborhood']}</h4>
                         <hr style="margin: 5px 0;">
                         <p style="margin: 5px 0; font-size: 12px;">
@@ -306,25 +363,38 @@ else:
                             <b>Amenities (1km):</b> {row['amenity_count_1km']:.0f}<br>
                             <b>Transit Stops (500m):</b> {row['transit_count_500m']:.0f}
                         </p>
+                        {ml_section}
                     </div>
                     """
                     
-                    # Color by sidewalk density
-                    density = row['sidewalk_density_m_per_km2']
-                    max_density = features_df['sidewalk_density_m_per_km2'].max()
-                    
-                    if max_density > 0:
-                        normalized = density / max_density
-                        if normalized >= 0.7:
-                            color = '#28a745'
-                        elif normalized >= 0.4:
-                            color = '#5cb85c'
-                        elif normalized >= 0.2:
-                            color = '#ffc107'
+                    # Color by ML score if available, otherwise by sidewalk density
+                    if has_ml and 'walkability_score' in row:
+                        score = row['walkability_score']
+                        if score >= 75:
+                            color = '#28a745'  # Green
+                        elif score >= 50:
+                            color = '#5cb85c'  # Light green
+                        elif score >= 25:
+                            color = '#ffc107'  # Yellow
                         else:
-                            color = '#dc3545'
+                            color = '#dc3545'  # Red
                     else:
-                        color = '#6c757d'
+                        # Fallback to sidewalk density
+                        density = row['sidewalk_density_m_per_km2']
+                        max_density = features_df['sidewalk_density_m_per_km2'].max()
+                        
+                        if max_density > 0:
+                            normalized = density / max_density
+                            if normalized >= 0.7:
+                                color = '#28a745'
+                            elif normalized >= 0.4:
+                                color = '#5cb85c'
+                            elif normalized >= 0.2:
+                                color = '#ffc107'
+                            else:
+                                color = '#dc3545'
+                        else:
+                            color = '#6c757d'
                     
                     folium.GeoJson(
                         row['geometry'],
@@ -340,7 +410,93 @@ else:
             
             st_folium(m, width=None, height=600)
         
-        with tab2:
+        # ML Scores Tab (only if ML data available)
+        if has_ml:
+            with tab2:
+                st.markdown("### 🎯 Machine Learning Walkability Scores")
+                st.markdown("Scores are predicted by a Random Forest model trained on 15 geospatial features.")
+                
+                # Score distribution
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # Score bar chart
+                    sorted_df = features_df.sort_values('walkability_score', ascending=True)
+                    fig_scores = px.bar(
+                        sorted_df,
+                        x='walkability_score',
+                        y='neighborhood',
+                        orientation='h',
+                        title='Walkability Scores by Neighborhood',
+                        color='walkability_score',
+                        color_continuous_scale='RdYlGn',
+                        range_color=[0, 100],
+                        labels={'walkability_score': 'Score (0-100)'}
+                    )
+                    fig_scores.update_layout(height=400, yaxis={'categoryorder':'total ascending'})
+                    st.plotly_chart(fig_scores, width='stretch')
+                
+                with col2:
+                    # Category distribution
+                    category_counts = features_df['score_category'].value_counts()
+                    fig_category = px.pie(
+                        values=category_counts.values,
+                        names=category_counts.index,
+                        title='Score Category Distribution',
+                        color=category_counts.index,
+                        color_discrete_map={
+                            'Excellent': '#28a745',
+                            'High': '#5cb85c',
+                            'Medium': '#ffc107',
+                            'Low': '#dc3545'
+                        }
+                    )
+                    fig_category.update_layout(height=400)
+                    st.plotly_chart(fig_category, width='stretch')
+                
+                # Score summary table
+                st.markdown("### 📊 Score Summary")
+                summary_df = features_df[['neighborhood', 'walkability_score', 'score_category']].copy()
+                summary_df['walkability_score'] = summary_df['walkability_score'].round(1)
+                summary_df = summary_df.sort_values('walkability_score', ascending=False)
+                summary_df.columns = ['Neighborhood', 'ML Score', 'Category']
+                st.dataframe(summary_df, width='stretch', hide_index=True)
+                
+                # Feature importance (if image exists)
+                importance_plot = Path('outputs/feature_importance.png')
+                if importance_plot.exists():
+                    st.markdown("### 🔍 Feature Importance")
+                    st.image(str(importance_plot), caption="Top features contributing to walkability predictions", use_container_width=True)
+                
+                # SHAP Visualizations
+                st.markdown("### 🎯 SHAP Interpretability Analysis")
+                st.markdown("SHAP (SHapley Additive exPlanations) values show how each feature contributes to individual predictions.")
+                
+                shap_summary = Path('outputs/shap_summary.png')
+                shap_highest = Path('outputs/shap_waterfall_highest.png')
+                shap_lowest = Path('outputs/shap_waterfall_lowest.png')
+                
+                if shap_summary.exists():
+                    st.markdown("#### Global Feature Impact")
+                    st.image(str(shap_summary), caption="SHAP Summary - How features impact all predictions (red = increases score, blue = decreases score)", use_container_width=True)
+                    
+                    col_high, col_low = st.columns(2)
+                    
+                    with col_high:
+                        if shap_highest.exists():
+                            st.markdown("#### Highest Scoring Neighborhood")
+                            st.image(str(shap_highest), caption="Why this neighborhood scored high", use_container_width=True)
+                    
+                    with col_low:
+                        if shap_lowest.exists():
+                            st.markdown("#### Lowest Scoring Neighborhood")
+                            st.image(str(shap_lowest), caption="Why this neighborhood scored low", use_container_width=True)
+                else:
+                    st.info("💡 SHAP analysis not available. Run `python ml_score.py` to generate SHAP visualizations.")
+        
+        # Feature Analysis Tab (moved index based on whether ML tab exists)
+        feature_tab = tab3 if has_ml else tab2
+        with feature_tab:
             col1, col2 = st.columns(2)
             
             with col1:
@@ -360,7 +516,7 @@ else:
                     color_continuous_scale='viridis'
                 )
                 fig.update_layout(xaxis_tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
             
             with col2:
                 # Correlation heatmap
@@ -374,12 +530,14 @@ else:
                     color_continuous_scale='RdBu',
                     aspect='auto'
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
         
-        with tab3:
+        # Data Table Tab
+        data_tab = tab4 if has_ml else tab3
+        with data_tab:
             st.dataframe(
                 features_df,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True
             )
             
